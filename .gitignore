@@ -1,0 +1,12 @@
+.bundle
+vendor
+vendor/**
+shell.nix
+gemset.nix
+
+.env
+
+tags
+**/tags
+
+db/database.sqlite3
