@@ -2,6 +2,7 @@
 
 Bundler.require :default
 require './lib/patches'
+require './lib/tio'
 
 token = ENV['TOKEN']
 raise 'No token in environment; set TOKEN' unless token
@@ -41,12 +42,55 @@ bot = Discordrb::Commands::CommandBot.new(
 bot.command :echo, {
   help_available: true,
   description: 'Echoes a string',
-  usage: '.echo <string>',
+  usage: '~echo <string>',
   min_args: 1
 } do |event, *args|
   log_command(:echo, event, args)
   args.map { |a| a.gsub('@', "\\@\u200D") }.join(' ')
 end
+
+bot.command :eval, {
+  help_available: false,
+  description: 'Evaluates some code. Owner-only.',
+  usage: '~eval <code>',
+  min_args: 1
+} do |e, *args|
+  m = e.message
+  a = e.author
+  log_command(:eval, e, args)
+  if a.id == 165998239273844736
+    eval args.join(' ')
+  else
+    "nope"
+  end
+end
+
+bot.message(start_with: '```', end_with: '```') do |event|
+  t = event.message.text[3..-4].chomp
+  lang = t.lines[0].chomp
+  code = t.lines[1..-1].join('\n').chomp
+
+  msg = nil
+  if lang == 'ruby' && event.author.id == 165998239273844736
+    e = event
+    m = e.message
+    a = e.author
+    text = "```#{eval code}```"
+    msg = event.respond text
+  else
+    res = TIO.run(lang, code)[0].gsub("```", "\\```").gsub('@', "\\@\u200D")
+    msg = event.respond "```\n#{res}\n```"
+  end
+
+  msg.create_reaction('❌')
+end
+
+bot.reaction_add(emoji: '❌') do |event|
+  if event.user.id != 680170235109703696
+    event.message.delete
+  end
+end
+
 
 bot.run true
 

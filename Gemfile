@@ -9,5 +9,7 @@ group :default do
   gem 'activerecord', require: 'active_record'
   gem 'sqlite3'
 
+  gem 'nokogiri'
+
   gem 'log4r'
 end
