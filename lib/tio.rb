@@ -5,27 +5,28 @@ require 'nokogiri'
 require 'zlib'
 
 module TIO
-  @@base = "https://tio.run"
+  API_BASE = 'https://tio.run'
 
   def self.run_endpoint
-    @@run_endpoint ||= open(
-      @@base + Nokogiri::HTML.parse(open(@@base)).xpath("//head/script[2]/@src")[0]
+    @@run_endpoint ||= URI.open(
+      API_BASE + Nokogiri::HTML.parse(URI.open(API_BASE)).xpath('//head/script[2]/@src')[0]
     ).readlines.grep(/^var runURL/)[0][14..-4]
   end
 
-  def self.gzdeflate(s)
-    Zlib::Deflate.new(nil, -Zlib::MAX_WBITS).deflate(s, Zlib::FINISH)
-  end
-  def self.gzinflate(s)
-    Zlib::Inflate.new(-Zlib::MAX_WBITS).inflate(s)
+  def self.gzdeflate(str)
+    Zlib::Deflate.new(nil, -Zlib::MAX_WBITS).deflate(str, Zlib::FINISH)
   end
 
-  def self.get_languages
-    JSON.parse open("#{base}/languages.json").read
+  def self.gzinflate(str)
+    Zlib::Inflate.new(-Zlib::MAX_WBITS).inflate(str)
   end
-  def self.get_languages_by_category(category)
-    langs = get_languages
-    return langs.filter { |k, v| v["categories"].include? category.to_s }
+
+  def self.languages
+    JSON.parse URI.open("#{base}/languages.json").read
+  end
+
+  def self.languages_by_category(category)
+    languages.filter { |k, v| v['categories'].include? category.to_s }
   end
 
   def self.file(name, body)
@@ -33,39 +34,39 @@ module TIO
   end
 
   def self.var(name, args)
-    "V#{name}\0#{args.size}\0#{args.map { |a| "#{a}\0"}.join}"
+    "V#{name}\0#{args.size}\0#{args.map { |a| "#{a}\0" }.join}"
   end
 
-  def self.run(language, code)
-    args = "/" # purpose unknown
+  def self.run(language, code, flags = nil, input = nil, arguments = [])
+    args = '/' # purpose unknown
 
-    val = ""
-    val += self.var('lang', [language])
-    val += self.var('args', [])
-    val += self.file('.code.tio', code)
-    val += "R"
+    val = ''
+    val += var('lang', [language])
+    val += var('args', arguments)
+    val += var('TIO_OPTIONS', flags) if flags && !(language.start_with? 'java-')
+    val += var('TIO_CFLAGS', flags) if flags
+    val += file('.code.tio', code)
+    val += file('.input.tio', input) if input
+    val += 'R'
 
-    req_body = self.gzdeflate(val)
+    req_body = gzdeflate(val)
 
     request_count = 0
     begin
       token = Random.new.bytes(16).chars.map { |c| c.ord.to_s(16) }.join
-      uri_string = @@base + run_endpoint + args + token
+      uri_string = API_BASE + run_endpoint + args + token
 
       uri = URI(uri_string)
       post_res = Net::HTTP.post(uri, req_body)
       request_count += 1
       post_res.value
     rescue Net::HTTPServerException
-      if request_count < 5
-        retry
-      else
-        raise
-      end
+      retry if request_count < 5
+      raise
     end
 
     res = gzinflate(post_res.body[10..-1])
 
-    fields = res.split(res[0..15])[1..-1].map(&:chomp)
+    res.split(res[0..15])[1..-1].map(&:chomp)
   end
 end

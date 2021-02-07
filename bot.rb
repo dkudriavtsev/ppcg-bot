@@ -27,9 +27,7 @@ def log_command(name, event, args, extra = nil)
   arguments = args.join ' '
 
   string = "command execution by user #{user}: .#{command} #{arguments}"
-  if extra
-    string << "; #{extra}"
-  end
+  extra && string << "; #{extra}"
   Log4r::Logger['bot'].info string
 end
 
@@ -58,43 +56,57 @@ bot.command :eval, {
   m = e.message
   a = e.author
   log_command(:eval, e, args)
-  if a.id == 165998239273844736
-    eval args.join(' ')
+  if a.id == '165998239273844736'.to_s
+    eval args.join(' ') # rubocop: disable Security/Eval
   else
-    "nope"
+    'nope'
   end
 end
 
-bot.message(start_with: '```', end_with: '```') do |event|
-  t = event.message.text[3..-4].chomp
-  lang = t.lines[0].chomp
-  code = t.lines[1..-1].join('\n').chomp
-
-  msg = nil
-  if lang == 'ruby' && event.author.id == 165998239273844736
-    e = event
-    m = e.message
-    a = e.author
-    text = "```#{eval code}```"
-    msg = event.respond text
+def walk_tree(tree)
+  if tree.instance_of?(Array)
+    tree.each_with_object([]) do |elem, a|
+      a << elem.children ? walk_tree(elem.children) : elem.dup
+    end.flatten
+  elsif tree.children
+    walk_tree(tree.children)
   else
-    res = TIO.run(lang, code)[0].gsub("```", "\\```").gsub('@', "\\@\u200D")
-    msg = event.respond "```\n#{res}\n```"
+    elem.dup
   end
+end
+
+def get_codespans(text)
+  doc = Kramdown::Document.new(text, input: 'GFM')
+
+  rc = doc.root.children
+
+  walk_tree(rc)
+    .filter { |elem| elem.type == :codespan }
+    .map { |s| pp s.value }
+end
+
+bot.command :tio, {
+  help_available: true,
+  description: 'Evaluates code using Try It Online',
+  usage: '~tio <lang> ```<code>``` [```input```]'
+} do |event, lang, *_args|
+  code, input = get_codespans(event.message.text)
+
+  res = TIO.run(lang, code, nil, input)[0].gsub('```', '\\```').gsub('@', "\\@\u200D")
+  msg = event.respond "```\n#{res}\n```"
 
   msg.create_reaction('❌')
 end
 
 bot.reaction_add(emoji: '❌') do |event|
-  if event.user.id != 680170235109703696
+  if event.user.id != '680170235109703696'.to_i
     event.message.delete
   end
 end
 
-
 bot.run true
 
-while buf = Readline.readline('% ', true)
+while (buf = Readline.readline('% ', true))
   s = buf.chomp
   if s.start_with? 'quit', 'stop'
     bot.stop
